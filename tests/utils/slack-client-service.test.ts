@@ -362,6 +362,9 @@ describe('SlackApiClient service facade', () => {
       retryConfig: { retries: 0 },
       logLevel: LogLevel.ERROR,
     });
+    // toHaveBeenCalledWith は値が undefined のキーを無視する。`rejectRateLimitedCalls: undefined`
+    // というキーが入っても見つけられないので、キーそのものが無いことを実際の引数で確かめる
+    expect(vi.mocked(WebClient).mock.calls[0][1]).not.toHaveProperty('rejectRateLimitedCalls');
   });
 
   it('keeps the legacy listChannels helper as a token-based adapter', async () => {

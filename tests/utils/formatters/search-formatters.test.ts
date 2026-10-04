@@ -227,6 +227,14 @@ describe('SearchFormatters', () => {
       expect(output.totalCount).toBe(0);
     });
 
+    it('should throw instead of printing an empty matches array when rawMatches is missing', () => {
+      const formatter = createSearchFormatter('raw');
+
+      // 黙って `matches: []` を出すと、totalCount が 2 なのに、呼び出し元は0件と読み違える
+      expect(() => formatter.format(createOptions({ totalCount: 2 }))).toThrow(/rawMatches/);
+      expect(mockConsole).not.toHaveBeenCalled();
+    });
+
     it('should strip terminal control sequences inside the raw matches', () => {
       const rawMatches = [
         {

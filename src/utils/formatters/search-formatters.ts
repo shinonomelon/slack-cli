@@ -100,12 +100,17 @@ class RawSearchFormatter extends JsonFormatter<SearchFormatterOptions> {
   protected transform(options: SearchFormatterOptions) {
     const { query, rawMatches, totalCount, page, pageCount } = options;
 
+    // rawMatches が無いまま空の配列で出すと、totalCount があるのに0件に見える。黙らず例外にする
+    if (rawMatches === undefined) {
+      throw new Error('The raw format requires rawMatches (the matches Slack returned)');
+    }
+
     return {
       query,
       totalCount,
       page,
       pageCount,
-      matches: rawMatches ?? [],
+      matches: rawMatches,
     };
   }
 }
