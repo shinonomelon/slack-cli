@@ -18,6 +18,7 @@ export interface ConfigClearOptions {
 export interface SendOptions {
   channel?: string;
   user?: string;
+  userId?: string;
   email?: string;
   message?: string;
   file?: string;

@@ -144,15 +144,19 @@ export function createValidationHook(
  */
 export const optionValidators = {
   /**
-   * Validates send target: must specify exactly one of --channel, --user, or --email
+   * Validates send target: must specify exactly one of --channel, --user, --user-id, or --email
    */
   sendTarget: (options: Record<string, unknown>): string | null => {
     const hasChannel = !!options.channel;
     const hasUser = !!options.user;
+    const hasUserId = !!options.userId;
     const hasEmail = !!options.email;
 
-    if (!hasChannel && !hasUser && !hasEmail) {
+    if (!hasChannel && !hasUser && !hasUserId && !hasEmail) {
       return 'You must specify one of: --channel, --user, or --email';
+    }
+    if (hasUserId && (hasChannel || hasUser || hasEmail)) {
+      return 'Cannot use --user-id with --channel, --user, or --email';
     }
     if (hasChannel && (hasUser || hasEmail)) {
       return 'Cannot use --channel with --user or --email';

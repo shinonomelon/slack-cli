@@ -699,6 +699,204 @@ describe('send command', () => {
     });
   });
 
+  describe('DM via --user-id', () => {
+    beforeEach(() => {
+      vi.mocked(mockConfigManager.getConfig).mockResolvedValue({
+        token: 'test-token',
+        updatedAt: new Date().toISOString(),
+      });
+    });
+
+    it('should open the DM with the user ID and send to the opened conversation', async () => {
+      vi.mocked(mockSlackClient.openDmChannel).mockResolvedValue('D9876543210');
+      vi.mocked(mockSlackClient.sendMessage).mockResolvedValue({
+        ok: true,
+        ts: '1234567890.123456',
+      });
+
+      await program.parseAsync([
+        'node',
+        'slack-cli',
+        'send',
+        '--user-id',
+        'U1234567890',
+        '-m',
+        'Hello via user ID!',
+      ]);
+
+      expect(mockSlackClient.openDmChannel).toHaveBeenCalledWith('U1234567890');
+      expect(mockSlackClient.sendMessage).toHaveBeenCalledWith(
+        'D9876543210',
+        'Hello via user ID!',
+        undefined,
+        undefined
+      );
+      // No name or email lookup: skipping the users.list scan is the point of --user-id.
+      expect(mockSlackClient.resolveUserIdByName).not.toHaveBeenCalled();
+      expect(mockSlackClient.lookupUserByEmail).not.toHaveBeenCalled();
+      expect(mockConsole.logSpy).toHaveBeenCalledTimes(1);
+      expect(mockConsole.logSpy).toHaveBeenCalledWith(chalk.green('✓ DM sent to U1234567890'));
+    });
+
+    it('should report the opened conversation in the JSON output', async () => {
+      vi.mocked(mockSlackClient.openDmChannel).mockResolvedValue('D9876543210');
+      // No channel in the response, so channelId can only come from the opened DM.
+      vi.mocked(mockSlackClient.sendMessage).mockResolvedValue({
+        ok: true,
+        ts: '1234567890.123456',
+      });
+
+      await program.parseAsync([
+        'node',
+        'slack-cli',
+        'send',
+        '--user-id',
+        'U1234567890',
+        '-m',
+        'Hello',
+        '--format',
+        'json',
+      ]);
+
+      expect(mockSlackClient.openDmChannel).toHaveBeenCalledWith('U1234567890');
+      expect(mockSlackClient.sendMessage).toHaveBeenCalledWith(
+        'D9876543210',
+        'Hello',
+        undefined,
+        undefined
+      );
+      expect(mockConsole.logSpy).toHaveBeenCalledTimes(1);
+      expect(mockConsole.logSpy).toHaveBeenCalledWith(
+        JSON.stringify(
+          { ok: true, channelId: 'D9876543210', ts: '1234567890.123456', threadTs: null },
+          null,
+          2
+        )
+      );
+    });
+
+    it('should accept the blocks, file and JSON options together', async () => {
+      const blocks = [{ type: 'section', text: { type: 'mrkdwn', text: '*Hello*' } }];
+      vi.mocked(fs.readFile).mockImplementation(async (path) =>
+        path === 'blocks.json' ? JSON.stringify(blocks) : 'fallback text'
+      );
+      vi.mocked(mockSlackClient.openDmChannel).mockResolvedValue('D9876543210');
+      vi.mocked(mockSlackClient.sendMessage).mockResolvedValue({
+        ok: true,
+        channel: 'D9876543210',
+        ts: '1234567890.123456',
+      });
+
+      await program.parseAsync([
+        'node',
+        'slack-cli',
+        'send',
+        '--user-id',
+        'U1234567890',
+        '--blocks-file',
+        'blocks.json',
+        '-f',
+        'fallback.txt',
+        '--format',
+        'json',
+      ]);
+
+      expect(mockSlackClient.sendMessage).toHaveBeenCalledWith(
+        'D9876543210',
+        'fallback text',
+        undefined,
+        blocks
+      );
+      expect(mockConsole.logSpy).toHaveBeenCalledTimes(1);
+      expect(mockConsole.logSpy).toHaveBeenCalledWith(
+        JSON.stringify(
+          { ok: true, channelId: 'D9876543210', ts: '1234567890.123456', threadTs: null },
+          null,
+          2
+        )
+      );
+    });
+
+    it('should schedule to the opened conversation', async () => {
+      vi.mocked(mockSlackClient.openDmChannel).mockResolvedValue('D9876543210');
+      vi.mocked(mockSlackClient.scheduleMessage).mockResolvedValue({
+        ok: true,
+        channel: 'D9876543210',
+        scheduled_message_id: 'Q1298393284',
+        post_at: 2051258400,
+      });
+
+      await program.parseAsync([
+        'node',
+        'slack-cli',
+        'send',
+        '--user-id',
+        'U1234567890',
+        '-m',
+        'Later',
+        '--at',
+        '2035-01-01T10:00:00Z',
+      ]);
+
+      expect(mockSlackClient.scheduleMessage).toHaveBeenCalledWith(
+        'D9876543210',
+        'Later',
+        2051258400,
+        undefined,
+        undefined
+      );
+      expect(mockConsole.logSpy).toHaveBeenCalledTimes(1);
+      expect(mockConsole.logSpy).toHaveBeenCalledWith(
+        chalk.green('✓ Message scheduled to U1234567890 at 2035-01-01T10:00:00.000Z')
+      );
+    });
+
+    it('should not send when the DM cannot be opened', async () => {
+      vi.mocked(mockSlackClient.openDmChannel).mockRejectedValue(new Error('user_not_found'));
+
+      await program.parseAsync([
+        'node',
+        'slack-cli',
+        'send',
+        '--user-id',
+        'U00000000',
+        '-m',
+        'Hello',
+      ]);
+
+      expect(mockConsole.errorSpy).toHaveBeenCalledWith('✗ Error:', 'user_not_found');
+      expect(mockConsole.exitSpy).toHaveBeenCalledWith(1);
+      expect(mockSlackClient.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['--channel', ['-c', 'general']],
+      ['--user', ['--user', 'john']],
+      ['--email', ['--email', 'john@example.com']],
+    ])('should reject --user-id together with %s without sending', async (_flag, otherTarget) => {
+      const sendCommand = setupSendCommand();
+      sendCommand.exitOverride();
+
+      await expect(
+        sendCommand.parseAsync([...otherTarget, '--user-id', 'U1234567890', '-m', 'Hello'], {
+          from: 'user',
+        })
+      ).rejects.toThrow('Error: Cannot use --user-id with --channel, --user, or --email');
+
+      expect(mockSlackClient.openDmChannel).not.toHaveBeenCalled();
+      expect(mockSlackClient.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('should keep the message for a missing target unchanged', async () => {
+      const sendCommand = setupSendCommand();
+      sendCommand.exitOverride();
+
+      await expect(sendCommand.parseAsync(['-m', 'Hello'], { from: 'user' })).rejects.toThrow(
+        /^Error: You must specify one of: --channel, --user, or --email$/
+      );
+    });
+  });
+
   describe('error handling', () => {
     it('should handle missing configuration', async () => {
       vi.mocked(mockConfigManager.getConfig).mockResolvedValue(null);

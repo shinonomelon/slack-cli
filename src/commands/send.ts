@@ -89,6 +89,7 @@ export function setupSendCommand(): Command {
     .description('Send or schedule a message to a Slack channel or DM')
     .option('-c, --channel <channel>', 'Target channel name or ID')
     .option('--user <username>', 'Send DM to user by username')
+    .option('--user-id <userId>', 'Send DM to user by Slack user ID')
     .option('--email <email>', 'Send DM to user by email address')
     .option('-m, --message <message>', 'Message to send')
     .option('-f, --file <file>', 'File containing message content')
@@ -135,6 +136,7 @@ export function setupSendCommand(): Command {
         // Resolve target channel
         let targetChannel: string;
         let targetLabel: string;
+        const isDm = Boolean(options.user || options.email || options.userId);
 
         if (options.user) {
           const userId = await client.resolveUserIdByName(options.user);
@@ -144,6 +146,10 @@ export function setupSendCommand(): Command {
           const user = await client.lookupUserByEmail(options.email);
           targetChannel = await client.openDmChannel(user.id!);
           targetLabel = options.email;
+        } else if (options.userId) {
+          // The ID is already known, so open the DM directly instead of scanning users.list.
+          targetChannel = await client.openDmChannel(options.userId);
+          targetLabel = options.userId;
         } else {
           targetChannel = options.channel!;
           targetLabel = `#${options.channel}`;
@@ -172,7 +178,7 @@ export function setupSendCommand(): Command {
           }
 
           const postAtIso = new Date(postAt * 1000).toISOString();
-          if (options.user || options.email) {
+          if (isDm) {
             console.log(chalk.green(`✓ Message scheduled to ${targetLabel} at ${postAtIso}`));
           } else {
             console.log(
@@ -200,7 +206,7 @@ export function setupSendCommand(): Command {
           return;
         }
 
-        if (options.user || options.email) {
+        if (isDm) {
           console.log(chalk.green(`✓ DM sent to ${targetLabel}`));
         } else {
           console.log(chalk.green(`✓ ${SUCCESS_MESSAGES.MESSAGE_SENT(options.channel!)}`));
