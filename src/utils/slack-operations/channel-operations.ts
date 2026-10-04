@@ -3,8 +3,10 @@ import pLimit from 'p-limit';
 import type {
   Channel,
   ChannelDetail,
+  ChannelLastRead,
   ChannelMembersOptions,
   ChannelMembersResult,
+  LastReadFailureReason,
   ListChannelsOptions,
 } from '../../types/slack';
 import { channelResolver } from '../channel-resolver';
@@ -34,6 +36,82 @@ const MISSING_SCOPE_TO_CHANNEL_TYPE: Partial<Record<string, ChannelLookupType>> 
   'im:read': 'im',
   'mpim:read': 'mpim',
 };
+
+// @slack/web-api の ErrorCode と同じ値。ErrorCode を import しないのは、@slack/web-api を
+// 一部の export だけでモックするテストが多く、モックに無い export に触れると例外になるため
+const WEB_API_ERROR_CODE = {
+  PLATFORM: 'slack_webapi_platform_error',
+  RATE_LIMITED: 'slack_webapi_rate_limited_error',
+} as const;
+
+// 認証の失敗。会話ごとの失敗にはせず、全体の失敗として投げる
+const AUTH_FAILURE_ERRORS = new Set([
+  'invalid_auth',
+  'not_authed',
+  'token_revoked',
+  'token_expired',
+  'account_inactive',
+]);
+
+// 会話が見えない（参加していない・権限が無い）ときの Slack のエラー
+const NOT_VISIBLE_ERRORS = new Set(['channel_not_found', 'missing_scope']);
+
+interface LastReadOutcome {
+  result: ChannelLastRead;
+  // 標準エラーに出す1行の補足（取れたときは無い）
+  detail?: string;
+}
+
+function readProperty(value: unknown, key: string): unknown {
+  return typeof value === 'object' && value !== null
+    ? (value as Record<string, unknown>)[key]
+    : undefined;
+}
+
+// Slack のエラー名（data.error）。@slack/web-api が Slack の応答から作ったエラーのときだけ読む
+function getPlatformErrorName(error: unknown): string | undefined {
+  if (readProperty(error, 'code') !== WEB_API_ERROR_CODE.PLATFORM) {
+    return undefined;
+  }
+  const name = readProperty(readProperty(error, 'data'), 'error');
+  return typeof name === 'string' ? name : undefined;
+}
+
+function isAuthFailure(error: unknown): boolean {
+  const name = getPlatformErrorName(error);
+  return name !== undefined && AUTH_FAILURE_ERRORS.has(name);
+}
+
+function rateLimitedRow(channelId: string, retryAfter: number | undefined): ChannelLastRead {
+  return {
+    channelId,
+    lastRead: null,
+    reason: 'rate_limited',
+    ...(retryAfter !== undefined && { retryAfter }),
+  };
+}
+
+// 取れなかった理由を、エラーの code と data.error で分ける（文の「rate limit」の有無は見ない）。
+// 認証の失敗は呼び出し側が先に取り除く
+function classifyLastReadFailure(channelId: string, error: unknown): LastReadOutcome {
+  const detail = extractErrorMessage(error);
+
+  if (readProperty(error, 'code') === WEB_API_ERROR_CODE.RATE_LIMITED) {
+    const retryAfter = readProperty(error, 'retryAfter');
+    return {
+      result: rateLimitedRow(
+        channelId,
+        typeof retryAfter === 'number' && Number.isFinite(retryAfter) ? retryAfter : undefined
+      ),
+      detail,
+    };
+  }
+
+  const name = getPlatformErrorName(error);
+  const reason: LastReadFailureReason =
+    name !== undefined && NOT_VISIBLE_ERRORS.has(name) ? 'not_visible' : 'error';
+  return { result: { channelId, lastRead: null, reason }, detail };
+}
 
 export class ChannelOperations extends BaseSlackClient {
   private channelLookupCache?: Promise<Channel[]>;
@@ -165,6 +243,78 @@ export class ChannelOperations extends BaseSlackClient {
     );
 
     return results.filter((channel): channel is Channel => channel !== null);
+  }
+
+  /**
+   * 会話ごとの last_read を、入力の順に返す。取れない会話は lastRead を null にし、reason に理由を入れる。
+   *
+   * 呼び出し側のプログラムが読む前提なので、fetchChannelInfo と違って再試行せず、回数制限でも待たない
+   * （待たずに失敗させるには、クライアントを rejectRateLimitedCalls 付きで作る）。
+   * - 1件が回数制限になったら、まだ呼んでいない会話は呼ばずに rate_limited を返す
+   * - 認証の失敗は会話ごとの失敗にせず、全体の失敗として投げる
+   */
+  async getLastReads(channelIds: string[]): Promise<ChannelLastRead[]> {
+    const limiter = pLimit(RATE_LIMIT.UNREAD_SCAN_CONCURRENT_REQUESTS);
+    // 最初に回数制限を受けた秒数。受けたあとは、まだ呼んでいない会話を呼ばない
+    let rateLimited: { retryAfter?: number } | undefined;
+    // 認証が失敗したあとは、まだ呼んでいない会話を呼ばず、同じエラーで終える
+    let authFailure: { error: unknown } | undefined;
+
+    const outcomes = await Promise.all(
+      channelIds.map((channelId) =>
+        limiter(async (): Promise<LastReadOutcome> => {
+          if (authFailure) {
+            throw authFailure.error;
+          }
+          if (rateLimited) {
+            const { retryAfter } = rateLimited;
+            return {
+              result: rateLimitedRow(channelId, retryAfter),
+              detail:
+                retryAfter !== undefined
+                  ? `not requested after an earlier rate limit, retry after ${retryAfter} seconds`
+                  : 'not requested after an earlier rate limit',
+            };
+          }
+
+          let lastRead: unknown;
+          try {
+            const info = await this.client.conversations.info({
+              channel: channelId,
+              include_num_members: false,
+            });
+            lastRead = (info.channel as ChannelWithUnreadInfo | undefined)?.last_read;
+          } catch (error) {
+            if (isAuthFailure(error)) {
+              authFailure = authFailure ?? { error };
+              throw error;
+            }
+            const outcome = classifyLastReadFailure(channelId, error);
+            if (outcome.result.reason === 'rate_limited') {
+              rateLimited = rateLimited ?? { retryAfter: outcome.result.retryAfter };
+            }
+            return outcome;
+          }
+
+          if (typeof lastRead === 'string' && lastRead.length > 0) {
+            return { result: { channelId, lastRead, reason: null } };
+          }
+          return { result: { channelId, lastRead: null, reason: 'no_last_read' } };
+        })
+      )
+    );
+
+    // 取れなかった会話は、理由を標準エラーに1行ずつ出す（全件の取得が終わってから、入力の順で）
+    for (const { result, detail } of outcomes) {
+      if (result.reason !== null) {
+        const suffix = detail ? ` (${sanitizeTerminalText(detail)})` : '';
+        console.error(
+          `Warning: skipped ${sanitizeTerminalText(result.channelId)}: ${result.reason}${suffix}`
+        );
+      }
+    }
+
+    return outcomes.map(({ result }) => result);
   }
 
   async resolveChannelId(channelNameOrId: string): Promise<string> {

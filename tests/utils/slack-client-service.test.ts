@@ -33,6 +33,7 @@ function createClientWithOps() {
       enrichUnreadChannels: vi.fn().mockResolvedValue('enrichedUnreadChannels-result'),
       getChannelDetail: vi.fn().mockResolvedValue('getChannelDetail-result'),
       getChannelMembers: vi.fn().mockResolvedValue('getChannelMembers-result'),
+      getLastReads: vi.fn().mockResolvedValue('getLastReads-result'),
       inviteToChannel: vi.fn().mockResolvedValue('inviteToChannel-result'),
       joinChannel: vi.fn().mockResolvedValue('joinChannel-result'),
       leaveChannel: vi.fn().mockResolvedValue('leaveChannel-result'),
@@ -235,6 +236,9 @@ describe('SlackApiClient service facade', () => {
       'getChannelMembers-result'
     );
     expect(ops.channelOps.getChannelMembers).toHaveBeenCalledWith('general', memberOptions);
+
+    await expect(client.getLastReads(['C1', 'D2'])).resolves.toBe('getLastReads-result');
+    expect(ops.channelOps.getLastReads).toHaveBeenCalledWith(['C1', 'D2']);
   });
 
   it('delegates file, reaction, pin, user, search, reminder, star, canvas, and assistant operations', async () => {

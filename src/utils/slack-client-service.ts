@@ -10,6 +10,7 @@ import type {
   CanvasSection,
   Channel,
   ChannelDetail,
+  ChannelLastRead,
   ChannelMembersOptions,
   ChannelMembersResult,
   ChannelUnreadResult,
@@ -171,6 +172,10 @@ export class SlackApiClient {
     const after = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const candidates = await this.searchOps.listMessagesToUser(userId, after);
     return this.channelOps.countUnreadSinceLastRead(candidates);
+  }
+
+  async getLastReads(channelIds: string[]): Promise<ChannelLastRead[]> {
+    return this.channelOps.getLastReads(channelIds);
   }
 
   async getChannelUnread(channelNameOrId: string): Promise<ChannelUnreadResult> {

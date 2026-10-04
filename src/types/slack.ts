@@ -227,3 +227,22 @@ export interface ChannelUnreadResult {
   totalUnreadCount: number;
   displayedMessageCount: number;
 }
+
+/**
+ * 会話の last_read を取れなかった理由
+ * - no_last_read: 応答に last_read が無い（参加していないチャンネルなど）
+ * - not_visible: 会話が見えない（channel_not_found・missing_scope）
+ * - rate_limited: 回数制限。待たずに失敗させている
+ * - error: それ以外の Slack のエラー、通信・HTTP の失敗
+ */
+export type LastReadFailureReason = 'no_last_read' | 'not_visible' | 'rate_limited' | 'error';
+
+export interface ChannelLastRead {
+  channelId: string;
+  // Slack が返した文字列のまま。取れなかったときは null
+  lastRead: string | null;
+  // 取れたときは null
+  reason: LastReadFailureReason | null;
+  // reason が rate_limited のときだけ付く、再試行までに待つ秒数
+  retryAfter?: number;
+}

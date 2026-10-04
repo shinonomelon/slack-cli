@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { ChannelDetail } from '../../types/slack';
+import { ChannelDetail, ChannelLastRead } from '../../types/slack';
 import { sanitizeTerminalText } from '../terminal-sanitizer';
 import { AbstractFormatter, createFormatterFactory, JsonFormatter } from './base-formatter';
 
@@ -73,4 +73,74 @@ const channelInfoFormatterFactory = createFormatterFactory<ChannelInfoFormatterO
 
 export function createChannelInfoFormatter(format: string) {
   return channelInfoFormatterFactory.create(format);
+}
+
+export interface LastReadFormatterOptions {
+  results: ChannelLastRead[];
+}
+
+// 取れなかった理由の表示。回数制限のときは待つ秒数も添える
+function describeLastReadReason({ reason, retryAfter }: ChannelLastRead): string {
+  if (reason === null) {
+    return '-';
+  }
+  return reason === 'rate_limited' && retryAfter !== undefined
+    ? `${reason}, retry after ${retryAfter}s`
+    : reason;
+}
+
+const LAST_READ_CHANNEL_COLUMN_WIDTH = 12;
+const LAST_READ_TIMESTAMP_COLUMN_WIDTH = 17;
+
+class TableLastReadFormatter extends AbstractFormatter<LastReadFormatterOptions> {
+  format({ results }: LastReadFormatterOptions): void {
+    const pad = (value: string, width: number) => value.padEnd(width);
+    console.log(
+      chalk.bold(
+        `${pad('Channel', LAST_READ_CHANNEL_COLUMN_WIDTH)}  ${pad('Last Read', LAST_READ_TIMESTAMP_COLUMN_WIDTH)}  Reason`
+      )
+    );
+    console.log('─'.repeat(60));
+
+    for (const row of results) {
+      const channelId = pad(sanitizeTerminalText(row.channelId), LAST_READ_CHANNEL_COLUMN_WIDTH);
+      const lastRead = pad(row.lastRead ?? '-', LAST_READ_TIMESTAMP_COLUMN_WIDTH);
+      console.log(`${channelId}  ${lastRead}  ${describeLastReadReason(row)}`);
+    }
+  }
+}
+
+class SimpleLastReadFormatter extends AbstractFormatter<LastReadFormatterOptions> {
+  format({ results }: LastReadFormatterOptions): void {
+    for (const row of results) {
+      const channelId = sanitizeTerminalText(row.channelId);
+      console.log(
+        row.lastRead !== null
+          ? `${channelId}: ${row.lastRead}`
+          : `${channelId}: - (${describeLastReadReason(row)})`
+      );
+    }
+  }
+}
+
+class JsonLastReadFormatter extends JsonFormatter<LastReadFormatterOptions> {
+  protected transform({ results }: LastReadFormatterOptions) {
+    // 取れた行も reason を null で出す。retryAfter は rate_limited の行だけに付ける
+    return results.map(({ channelId, lastRead, reason, retryAfter }) => ({
+      channelId,
+      lastRead,
+      reason,
+      ...(retryAfter !== undefined && { retryAfter }),
+    }));
+  }
+}
+
+const lastReadFormatterFactory = createFormatterFactory<LastReadFormatterOptions>({
+  table: new TableLastReadFormatter(),
+  simple: new SimpleLastReadFormatter(),
+  json: new JsonLastReadFormatter(),
+});
+
+export function createLastReadFormatter(format: string) {
+  return lastReadFormatterFactory.create(format);
 }

@@ -204,6 +204,13 @@ export interface ChannelInfoOptions {
   profile?: string;
 }
 
+// ids は位置引数。wrapCommand が第1引数しか渡さないので、options にまとめて持つ
+export interface ChannelLastReadOptions {
+  ids: string[];
+  format?: 'table' | 'simple' | 'json';
+  profile?: string;
+}
+
 export interface ChannelSetTopicOptions {
   channel: string;
   topic: string;
