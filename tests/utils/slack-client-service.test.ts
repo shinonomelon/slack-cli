@@ -1,4 +1,4 @@
-import { WebClient } from '@slack/web-api';
+import { LogLevel, WebClient } from '@slack/web-api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SlackApiClient, slackApiClient } from '../../src/utils/slack-client-service';
 
@@ -337,6 +337,27 @@ describe('SlackApiClient service facade', () => {
       'clearThreadStatus-result'
     );
     expect(ops.assistantOps.clearThreadStatus).toHaveBeenCalledWith('C1', '1.2');
+  });
+
+  it('forwards rejectRateLimitedCalls from the constructor options to the WebClient', () => {
+    new SlackApiClient('test-token', { rejectRateLimitedCalls: true });
+
+    expect(WebClient).toHaveBeenCalledWith('test-token', {
+      retryConfig: { retries: 0 },
+      logLevel: LogLevel.ERROR,
+      rejectRateLimitedCalls: true,
+    });
+  });
+
+  it('does not add rejectRateLimitedCalls to the WebClient options when it is omitted', () => {
+    new SlackApiClient('test-token');
+
+    expect(WebClient).toHaveBeenCalledTimes(1);
+    // 省略したときは今までと同じ options（キーを足さない）
+    expect(WebClient).toHaveBeenCalledWith('test-token', {
+      retryConfig: { retries: 0 },
+      logLevel: LogLevel.ERROR,
+    });
   });
 
   it('keeps the legacy listChannels helper as a token-based adapter', async () => {

@@ -127,7 +127,9 @@ export class SearchOperations extends BaseSlackClient {
       page,
     });
 
-    const matches = (response.messages?.matches || []).map((match) => ({
+    // rawMatches は Slack の返した matches を加工せずに返す。matches は表示向けに項目を絞る
+    const rawMatches = response.messages?.matches || [];
+    const matches = rawMatches.map((match) => ({
       text: match.text,
       user: match.user,
       username: match.username,
@@ -144,6 +146,7 @@ export class SearchOperations extends BaseSlackClient {
     return {
       query: response.query || query,
       matches,
+      rawMatches,
       totalCount: pagination?.total_count || 0,
       page: pagination?.page || 1,
       pageCount: pagination?.page_count || 0,

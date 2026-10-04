@@ -32,7 +32,7 @@ import {
   type AssistantThreadStatusOptions,
   type AssistantThreadStatusResponse,
 } from './slack-operations/assistant-operations';
-import { createSlackClientContext } from './slack-operations/base-client';
+import { createSlackClientContext, type SlackClientOptions } from './slack-operations/base-client';
 import { CanvasOperations } from './slack-operations/canvas-operations';
 import { ChannelOperations } from './slack-operations/channel-operations';
 import type {
@@ -62,8 +62,8 @@ export class SlackApiClient {
   private canvasOps: CanvasOperations;
   private assistantOps: AssistantOperations;
 
-  constructor(token: string) {
-    const sharedContext = createSlackClientContext(token);
+  constructor(token: string, options?: SlackClientOptions) {
+    const sharedContext = createSlackClientContext(token, options);
     this.channelOps = new ChannelOperations(sharedContext);
     this.messageOps = new MessageOperations(sharedContext, this.channelOps);
     this.fileOps = new FileOperations(sharedContext, this.channelOps);

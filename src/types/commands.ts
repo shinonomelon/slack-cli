@@ -254,7 +254,7 @@ export interface SearchOptions {
   sortDir?: 'asc' | 'desc';
   number?: string;
   page?: string;
-  format?: 'table' | 'simple' | 'json';
+  format?: 'table' | 'simple' | 'json' | 'raw';
   profile?: string;
 }
 

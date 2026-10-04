@@ -102,6 +102,21 @@ describe('users command', () => {
       expect(mockConsole.logSpy).toHaveBeenCalledWith(expect.stringContaining('alice'));
     });
 
+    it('should reject --format raw before reading the config or calling Slack', async () => {
+      // raw は search だけが受け付ける形式。共通の形式の検証は今までどおり弾く
+      const usersCommand = setupUsersCommand();
+      usersCommand.exitOverride();
+      const listCommand = usersCommand.commands.find((c) => c.name() === 'list')!;
+      listCommand.exitOverride();
+
+      await expect(listCommand.parseAsync(['--format', 'raw'], { from: 'user' })).rejects.toThrow(
+        "Error: Invalid format 'raw'. Must be one of: table, simple, json"
+      );
+
+      expect(mockConfigManager.getConfig).not.toHaveBeenCalled();
+      expect(mockSlackClient.listUsers).not.toHaveBeenCalled();
+    });
+
     it('should show message when no users found', async () => {
       vi.mocked(mockConfigManager.getConfig).mockResolvedValue({
         token: 'test-token',

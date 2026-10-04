@@ -15,7 +15,11 @@ export function setupSearchCommand(): Command {
     .option('--sort-dir <direction>', 'Sort direction: asc or desc', 'desc')
     .option('-n, --number <count>', 'Number of results per page (1-100)')
     .option('--page <page>', 'Page number (1-100)')
-    .option('--format <format>', 'Output format: table, simple, json', 'table')
+    .option(
+      '--format <format>',
+      "Output format: table, simple, json, raw (raw prints Slack's matches as returned)",
+      'table'
+    )
     .option('--profile <profile>', 'Use specific workspace profile')
     .hook(
       'preAction',
@@ -24,13 +28,19 @@ export function setupSearchCommand(): Command {
         optionValidators.searchSortDir,
         optionValidators.searchCount,
         optionValidators.searchPage,
-        optionValidators.format,
+        optionValidators.searchFormat,
       ])
     )
     .action(
       wrapCommand(async (options: SearchOptions) => {
         const profile = parseProfile(options.profile);
-        const client = await createSlackClient(profile);
+        const format = parseFormat(options.format);
+        // raw は呼び出し側のプログラムが読む形式。回数制限に当たったら retry-after を待たず、
+        // 待つ秒数を載せたエラーですぐ失敗させる。それ以外の形式は今までと同じクライアントを作る
+        const client = await createSlackClient(
+          profile,
+          format === 'raw' ? { rejectRateLimitedCalls: true } : undefined
+        );
 
         const count = parseCount(
           options.number,
@@ -53,11 +63,11 @@ export function setupSearchCommand(): Command {
           page,
         });
 
-        const format = parseFormat(options.format);
         const formatter = createSearchFormatter(format);
         formatter.format({
           query: result.query,
           matches: result.matches,
+          rawMatches: result.rawMatches,
           totalCount: result.totalCount,
           page: result.page,
           pageCount: result.pageCount,

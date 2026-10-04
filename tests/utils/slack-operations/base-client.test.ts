@@ -60,6 +60,20 @@ describe('base Slack client', () => {
     expect(typeof context.rateLimiter).toBe('function');
   });
 
+  it('passes rejectRateLimitedCalls to the WebClient options when it is given', () => {
+    const webClient = { chat: {} };
+    mockConstructedWebClient(webClient);
+
+    const context = createSlackClientContext('xoxb-token', { rejectRateLimitedCalls: true });
+
+    expect(WebClient).toHaveBeenCalledWith('xoxb-token', {
+      retryConfig: { retries: 0 },
+      logLevel: LogLevel.ERROR,
+      rejectRateLimitedCalls: true,
+    });
+    expect(context.client).toBe(webClient);
+  });
+
   it('accepts token, shared context, and raw WebClient dependencies', () => {
     const webClient = { chat: {} };
     mockConstructedWebClient(webClient);

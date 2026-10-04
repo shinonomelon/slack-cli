@@ -505,6 +505,20 @@ export const optionValidators = {
     }
     return null;
   },
+
+  /**
+   * search の出力形式を検証する。raw（Slack の matches をそのまま出す形式）は search だけが
+   * 持つので、共通の format には足さない（users list など他のコマンドで raw を受け付けないため）
+   */
+  searchFormat: (options: Record<string, unknown>): string | null => {
+    if (options.format) {
+      const validFormats = ['table', 'simple', 'json', 'raw'];
+      if (!validFormats.includes(options.format as string)) {
+        return `Invalid format '${options.format}'. Must be one of: ${validFormats.join(', ')}`;
+      }
+    }
+    return null;
+  },
 };
 
 /**

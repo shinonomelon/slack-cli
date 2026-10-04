@@ -7,6 +7,8 @@ import { AbstractFormatter, createFormatterFactory, JsonFormatter } from './base
 export interface SearchFormatterOptions {
   query: string;
   matches: SearchMatch[];
+  // Slack の matches をそのまま持つ。raw 形式だけが使う
+  rawMatches?: unknown[];
   totalCount: number;
   page: number;
   pageCount: number;
@@ -93,10 +95,26 @@ class JsonSearchFormatter extends JsonFormatter<SearchFormatterOptions> {
   }
 }
 
+// Slack の matches を整形せずに出す。json と同じキーの並び・字下げ・制御文字の除去にそろえる
+class RawSearchFormatter extends JsonFormatter<SearchFormatterOptions> {
+  protected transform(options: SearchFormatterOptions) {
+    const { query, rawMatches, totalCount, page, pageCount } = options;
+
+    return {
+      query,
+      totalCount,
+      page,
+      pageCount,
+      matches: rawMatches ?? [],
+    };
+  }
+}
+
 const searchFormatterFactory = createFormatterFactory<SearchFormatterOptions>({
   table: new TableSearchFormatter(),
   simple: new SimpleSearchFormatter(),
   json: new JsonSearchFormatter(),
+  raw: new RawSearchFormatter(),
 });
 
 export function createSearchFormatter(format: string) {

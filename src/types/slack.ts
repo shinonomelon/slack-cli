@@ -72,6 +72,10 @@ export interface SearchMessagesOptions {
 export interface SearchResult {
   query: string;
   matches: SearchMatch[];
+  // Slack の search.messages が返した matches をそのまま持つ（--format raw 用）。
+  // matches は表示向けに会話の種類・添付・スレッドの親などを捨てているので、
+  // それらが要る呼び出し側はこちらを使う
+  rawMatches: unknown[];
   totalCount: number;
   page: number;
   pageCount: number;

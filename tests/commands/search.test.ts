@@ -253,6 +253,154 @@ describe('search command', () => {
     });
   });
 
+  describe('raw format', () => {
+    // Slack の search.messages が返す match そのまま（整形済みの matches が捨てる項目を含む）
+    const rawMatches = [
+      {
+        iid: 'a1b2c3',
+        team: 'T123',
+        type: 'message',
+        text: 'hello <@U456>',
+        user: 'U123',
+        username: 'john.doe',
+        ts: '1609459200.000100',
+        channel: { id: 'D123', name: 'U456', is_im: true, is_mpim: false, is_private: true },
+        permalink:
+          'https://slack.com/archives/D123/p1609459200000100?thread_ts=1609459100.000200&cid=D123',
+        attachments: [{ fallback: 'attachment text' }],
+      },
+    ];
+
+    const mockSearchResult = () =>
+      vi.mocked(mockSlackClient.searchMessages).mockResolvedValue({
+        query: 'test',
+        matches: [
+          {
+            text: 'hello <@U456>',
+            user: 'U123',
+            username: 'john.doe',
+            ts: '1609459200.000100',
+            channel: { id: 'D123', name: 'U456' },
+            permalink: 'https://slack.com/archives/D123/p1609459200000100',
+          },
+        ],
+        rawMatches,
+        totalCount: 1,
+        page: 1,
+        pageCount: 1,
+      });
+
+    // beforeEach が token 'test-token' で作る分と区別するため、各テストは別の token を使う
+    const clientCallsFor = (token: string) =>
+      vi.mocked(SlackApiClient).mock.calls.filter((args) => args[0] === token);
+
+    const useToken = (token: string) =>
+      vi.mocked(mockConfigManager.getConfig).mockResolvedValue({
+        token,
+        updatedAt: new Date().toISOString(),
+      });
+
+    it('should print Slack matches as they are under the json keys when --format raw', async () => {
+      useToken('raw-token');
+      mockSearchResult();
+
+      await program.parseAsync([
+        'node',
+        'slack-cli',
+        'search',
+        '-q',
+        'test',
+        '--sort',
+        'timestamp',
+        '-n',
+        '5',
+        '--format',
+        'raw',
+      ]);
+
+      expect(mockSlackClient.searchMessages).toHaveBeenCalledWith('test', {
+        sort: 'timestamp',
+        sortDir: 'desc',
+        count: 5,
+        page: 1,
+      });
+      expect(mockConsole.logSpy).toHaveBeenCalledTimes(1);
+      const printed = mockConsole.logSpy.mock.calls[0][0] as string;
+      const output = JSON.parse(printed);
+      expect(Object.keys(output)).toEqual(['query', 'totalCount', 'page', 'pageCount', 'matches']);
+      expect(output).toEqual({
+        query: 'test',
+        totalCount: 1,
+        page: 1,
+        pageCount: 1,
+        matches: rawMatches,
+      });
+      expect(printed).toBe(JSON.stringify(output, null, 2));
+      // 形式の検証で弾かれていない（検証に失敗すると process.exit が呼ばれる）
+      expect(mockConsole.exitSpy).not.toHaveBeenCalled();
+    });
+
+    it('should create the client with rejectRateLimitedCalls when --format raw', async () => {
+      useToken('raw-token');
+      mockSearchResult();
+
+      await program.parseAsync(['node', 'slack-cli', 'search', '-q', 'test', '--format', 'raw']);
+
+      expect(clientCallsFor('raw-token')).toEqual([
+        ['raw-token', { rejectRateLimitedCalls: true }],
+      ]);
+    });
+
+    it.each([
+      ['table', ['--format', 'table']],
+      ['simple', ['--format', 'simple']],
+      ['json', ['--format', 'json']],
+      ['the default format', []],
+    ])('should create the client with only the token for %s', async (_name, formatArgs) => {
+      useToken('plain-token');
+      mockSearchResult();
+
+      await program.parseAsync(['node', 'slack-cli', 'search', '-q', 'test', ...formatArgs]);
+
+      // 引数の数まで同じ（2つ目に undefined も渡さない）
+      expect(clientCallsFor('plain-token')).toEqual([['plain-token']]);
+    });
+
+    it('should print the shaped matches, not the raw ones, when --format json', async () => {
+      useToken('plain-token');
+      mockSearchResult();
+
+      await program.parseAsync(['node', 'slack-cli', 'search', '-q', 'test', '--format', 'json']);
+
+      const output = JSON.parse(mockConsole.logSpy.mock.calls[0][0] as string);
+      expect(output.matches).toEqual([
+        {
+          channel: 'U456',
+          username: 'john.doe',
+          timestamp: expect.any(String),
+          text: 'hello <@U456>',
+          permalink: 'https://slack.com/archives/D123/p1609459200000100',
+        },
+      ]);
+    });
+
+    it('should report a rate limit failure as an error and exit with 1 when --format raw', async () => {
+      useToken('raw-token');
+      vi.mocked(mockSlackClient.searchMessages).mockRejectedValue(
+        new Error('A rate-limit has been reached, you may retry this request in 45 seconds')
+      );
+
+      await program.parseAsync(['node', 'slack-cli', 'search', '-q', 'test', '--format', 'raw']);
+
+      expect(mockConsole.errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Error:'),
+        'A rate-limit has been reached, you may retry this request in 45 seconds'
+      );
+      expect(mockConsole.exitSpy).toHaveBeenCalledWith(1);
+      expect(mockConsole.logSpy).not.toHaveBeenCalled();
+    });
+  });
+
   describe('validation', () => {
     it('should show error for invalid sort option', async () => {
       const searchCommand = setupSearchCommand();
@@ -279,6 +427,16 @@ describe('search command', () => {
       await expect(
         searchCommand.parseAsync(['-q', 'test', '--format', 'invalid'], { from: 'user' })
       ).rejects.toThrow();
+    });
+
+    it('should list raw among the accepted formats in the invalid format error', async () => {
+      const searchCommand = setupSearchCommand();
+      searchCommand.exitOverride();
+
+      await expect(
+        searchCommand.parseAsync(['-q', 'test', '--format', 'xml'], { from: 'user' })
+      ).rejects.toThrow("Error: Invalid format 'xml'. Must be one of: table, simple, json, raw");
+      expect(mockSlackClient.searchMessages).not.toHaveBeenCalled();
     });
 
     it('should show error for invalid page number', async () => {

@@ -10,13 +10,25 @@ export interface SharedSlackClientContext {
 
 export type SlackClientDependency = string | WebClient | SharedSlackClientContext;
 
-export function createSlackClientContext(token: string): SharedSlackClientContext {
+export interface SlackClientOptions {
+  // true にすると、回数制限に当たったとき retry-after の秒数を待たずにすぐ失敗する
+  rejectRateLimitedCalls?: boolean;
+}
+
+export function createSlackClientContext(
+  token: string,
+  options?: SlackClientOptions
+): SharedSlackClientContext {
   return {
     client: new WebClient(token, {
       retryConfig: {
         retries: 0, // Disable automatic retries to handle rate limits manually
       },
       logLevel: LogLevel.ERROR, // Reduce noise from WebClient logs
+      // 省略したときはキーを足さない（WebClient の既定のまま）
+      ...(options?.rejectRateLimitedCalls !== undefined && {
+        rejectRateLimitedCalls: options.rejectRateLimitedCalls,
+      }),
     }),
     rateLimiter: pLimit(RATE_LIMIT.CONCURRENT_REQUESTS),
     token,

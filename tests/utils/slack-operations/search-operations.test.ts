@@ -177,6 +177,93 @@ describe('SearchOperations', () => {
       expect(result.matches[0].username).toBeUndefined();
       expect(result.matches[0].channel.name).toBeUndefined();
     });
+
+    it('should return the Slack matches unchanged as rawMatches', async () => {
+      // matches が捨てる項目（is_im・添付・thread_ts 付きの permalink など）を含む生の結果
+      const slackMatches = [
+        {
+          iid: 'a1b2c3',
+          team: 'T123',
+          type: 'message',
+          text: 'hello <@U456>',
+          user: 'U123',
+          username: 'john.doe',
+          ts: '1609459200.000100',
+          channel: {
+            id: 'D123',
+            name: 'U456',
+            is_channel: false,
+            is_group: false,
+            is_im: true,
+            is_mpim: false,
+            is_private: true,
+          },
+          permalink:
+            'https://slack.com/archives/D123/p1609459200000100?thread_ts=1609459100.000200&cid=D123',
+          attachments: [{ fallback: 'attachment text' }],
+        },
+      ];
+      mockClient.search.messages.mockResolvedValue({
+        ok: true,
+        query: 'hello',
+        messages: {
+          matches: slackMatches,
+          pagination: { total_count: 1, page: 1, page_count: 1 },
+        },
+      });
+
+      const result = await searchOps.searchMessages('hello');
+
+      expect(result.rawMatches).toEqual(slackMatches);
+      expect(result.rawMatches[0]).toHaveProperty('channel.is_im', true);
+      expect(result.rawMatches[0]).toHaveProperty('attachments');
+    });
+
+    it('should keep the shaped matches as they were when rawMatches is added', async () => {
+      mockClient.search.messages.mockResolvedValue({
+        ok: true,
+        query: 'hello',
+        messages: {
+          matches: [
+            {
+              iid: 'a1b2c3',
+              type: 'message',
+              text: 'hello',
+              user: 'U123',
+              username: 'john.doe',
+              ts: '1609459200.000100',
+              channel: { id: 'D123', name: 'U456', is_im: true, is_private: true },
+              permalink: 'https://slack.com/archives/D123/p1609459200000100',
+              attachments: [{ fallback: 'attachment text' }],
+            },
+          ],
+          pagination: { total_count: 1, page: 1, page_count: 1 },
+        },
+      });
+
+      const result = await searchOps.searchMessages('hello');
+
+      expect(result.matches).toEqual([
+        {
+          text: 'hello',
+          user: 'U123',
+          username: 'john.doe',
+          ts: '1609459200.000100',
+          channel: { id: 'D123', name: 'U456' },
+          permalink: 'https://slack.com/archives/D123/p1609459200000100',
+        },
+      ]);
+    });
+
+    it('should return empty matches and rawMatches when the response has no messages', async () => {
+      mockClient.search.messages.mockResolvedValue({ ok: true, query: 'test' });
+
+      const result = await searchOps.searchMessages('test');
+
+      expect(result.matches).toEqual([]);
+      expect(result.rawMatches).toEqual([]);
+      expect(result.totalCount).toBe(0);
+    });
   });
 
   describe('getAuthenticatedUserId', () => {

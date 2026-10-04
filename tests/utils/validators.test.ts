@@ -295,6 +295,43 @@ describe('validators', () => {
         );
       });
     });
+
+    describe('searchFormat', () => {
+      it('should pass when no format is provided', () => {
+        expect(optionValidators.searchFormat({})).toBeNull();
+      });
+
+      it('should accept table, simple, json, and raw', () => {
+        expect(optionValidators.searchFormat({ format: 'table' })).toBeNull();
+        expect(optionValidators.searchFormat({ format: 'simple' })).toBeNull();
+        expect(optionValidators.searchFormat({ format: 'json' })).toBeNull();
+        expect(optionValidators.searchFormat({ format: 'raw' })).toBeNull();
+      });
+
+      it('should reject other formats and list raw in the message', () => {
+        expect(optionValidators.searchFormat({ format: 'xml' })).toBe(
+          "Invalid format 'xml'. Must be one of: table, simple, json, raw"
+        );
+        expect(optionValidators.searchFormat({ format: 'compact' })).toBe(
+          "Invalid format 'compact'. Must be one of: table, simple, json, raw"
+        );
+      });
+    });
+
+    describe('format', () => {
+      it('should accept table, simple, and json', () => {
+        expect(optionValidators.format({})).toBeNull();
+        expect(optionValidators.format({ format: 'table' })).toBeNull();
+        expect(optionValidators.format({ format: 'simple' })).toBeNull();
+        expect(optionValidators.format({ format: 'json' })).toBeNull();
+      });
+
+      it('should still reject raw, which only search accepts', () => {
+        expect(optionValidators.format({ format: 'raw' })).toBe(
+          "Invalid format 'raw'. Must be one of: table, simple, json"
+        );
+      });
+    });
   });
 
   describe('createOptionParser', () => {
