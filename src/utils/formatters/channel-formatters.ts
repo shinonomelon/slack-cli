@@ -39,6 +39,8 @@ class ChannelJsonFormatter extends JsonFormatter<ChannelFormatterOptions> {
       channel: channel.display_name || formatChannelName(channel.name),
       channelId: channel.id,
       unreadCount: channel.unread_count || 0,
+      // Include the other member of a direct message so callers can match it by user ID
+      ...(channel.is_im && channel.user && { userId: channel.user }),
     }));
   }
 }
