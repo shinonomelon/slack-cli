@@ -113,6 +113,12 @@ function classifyLastReadFailure(channelId: string, error: unknown): LastReadOut
   return { result: { channelId, lastRead: null, reason }, detail };
 }
 
+// 警告に入れる文字列を1行にする。改行（\r\n・\r・\n）は空白1つに置き換える。
+// sanitizeTerminalText は \n を残し、\r は空白にせず消すだけなので、置き換えを先に行う
+function toSingleLine(value: string): string {
+  return sanitizeTerminalText(value.replace(/\r\n|[\r\n]/g, ' '));
+}
+
 export class ChannelOperations extends BaseSlackClient {
   private channelLookupCache?: Promise<Channel[]>;
 
@@ -304,12 +310,13 @@ export class ChannelOperations extends BaseSlackClient {
       )
     );
 
-    // 取れなかった会話は、理由を標準エラーに1行ずつ出す（全件の取得が終わってから、入力の順で）
+    // 取れなかった会話は、理由を標準エラーに1行ずつ出す（全件の取得が終わってから、入力の順で）。
+    // ID やエラー文に改行が入っても、1会話1行を保つ
     for (const { result, detail } of outcomes) {
       if (result.reason !== null) {
-        const suffix = detail ? ` (${sanitizeTerminalText(detail)})` : '';
+        const suffix = detail ? ` (${toSingleLine(detail)})` : '';
         console.error(
-          `Warning: skipped ${sanitizeTerminalText(result.channelId)}: ${result.reason}${suffix}`
+          `Warning: skipped ${toSingleLine(result.channelId)}: ${result.reason}${suffix}`
         );
       }
     }

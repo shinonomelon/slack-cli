@@ -1105,6 +1105,55 @@ describe('ChannelOperations', () => {
       ]);
     });
 
+    it('should keep each warning on one line when the id or the error text has line breaks', async () => {
+      // 文に \n・\r\n・単独の \r を入れる。sanitizeTerminalText は \n を残し、\r は空白にせず消すだけ
+      mockClient.conversations.info.mockRejectedValue(
+        new Error('first line\nsecond line\r\nthird line\rfourth line')
+      );
+
+      const result = await channelOps.getLastReads(['C1', 'C2\nX']);
+
+      // 戻り値の channelId は渡された値のまま。1行にするのは標準エラーに出す警告だけ
+      expect(result.map((row) => row.channelId)).toEqual(['C1', 'C2\nX']);
+      // 1会話につき1回の出力で、\r も \n も含まない。改行は空白1つになる
+      expect(errorSpy.mock.calls).toEqual([
+        ['Warning: skipped C1: error (first line second line third line fourth line)'],
+        ['Warning: skipped C2 X: error (first line second line third line fourth line)'],
+      ]);
+    });
+
+    describe('classifying by code and data.error, not by the sentence', () => {
+      // 上の code 付きのテストは、どの失敗も文の中に同じ語（rate-limit・channel_not_found など）を
+      // 持つので、文で分ける実装でも通ってしまう。code と文がずれる失敗で、分け方そのものを固定する
+      const getLastReadsFailing = async (failure: Error) => {
+        mockClient.conversations.info.mockRejectedValue(failure);
+        return channelOps.getLastReads(['C1']);
+      };
+
+      it('should report rate_limited by its code even when the sentence has no rate limit words', async () => {
+        // 文には回数制限の語（rate・limit・retry・seconds）を入れない。retryAfter は文からは読めない
+        const failure = Object.assign(new Error('unexpected failure'), {
+          code: 'slack_webapi_rate_limited_error',
+          retryAfter: 30,
+        });
+
+        await expect(getLastReadsFailing(failure)).resolves.toStrictEqual([
+          { channelId: 'C1', lastRead: null, reason: 'rate_limited', retryAfter: 30 },
+        ]);
+      });
+
+      it('should report error when only the sentence names a Slack error that means not_visible', async () => {
+        // 文は Slack のエラーと同じだが、code も data も無いので、Slack の応答としては扱わない
+        for (const name of ['channel_not_found', 'missing_scope']) {
+          const result = await getLastReadsFailing(new Error(`An API error occurred: ${name}`));
+
+          expect(result, `the sentence names ${name}`).toStrictEqual([
+            { channelId: 'C1', lastRead: null, reason: 'error' },
+          ]);
+        }
+      });
+    });
+
     describe('with the errors @slack/web-api itself builds', () => {
       // 手で作ったエラーの形が、ライブラリが実際に作る形からずれても、ここで気づけるようにする
       const getLastReadsFailing = async (failure: Error) => {
