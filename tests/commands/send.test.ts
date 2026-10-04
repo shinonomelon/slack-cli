@@ -897,7 +897,8 @@ describe('send command', () => {
     });
 
     it.each(['U1234567890', 'W1234567890'])('should accept %s as --user-id', async (userId) => {
-      // 直前のテストが openDmChannel を reject のまま残すので、ここで明示的に stub する
+      // 同じ describe の前のテスト（should not send when the DM cannot be opened）が
+      // openDmChannel を reject のまま残すので、ここで明示的に stub する
       vi.mocked(mockSlackClient.openDmChannel).mockResolvedValue('D9876543210');
       vi.mocked(mockSlackClient.sendMessage).mockResolvedValue({
         ok: true,
