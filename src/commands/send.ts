@@ -103,6 +103,7 @@ export function setupSendCommand(): Command {
     .hook(
       'preAction',
       createValidationHook([
+        optionValidators.sendUserId,
         optionValidators.sendTarget,
         optionValidators.messageOrFile,
         optionValidators.threadTimestamp,

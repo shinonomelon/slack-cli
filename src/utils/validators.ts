@@ -144,6 +144,23 @@ export function createValidationHook(
  */
 export const optionValidators = {
   /**
+   * --user-id が指定されたときは（空文字を含む）、Slack のユーザー ID 1件であることを確かめる。
+   * conversations.open はカンマ区切りの ID を受けてグループ DM を開くので、値を素通しにしない。
+   * 空文字は sendTarget が「指定なし」と数えるため、sendTarget より前に検証する
+   */
+  sendUserId: (options: Record<string, unknown>): string | null => {
+    if (options.userId === undefined) {
+      return null;
+    }
+    const userId = options.userId as string;
+    return validateFormat(
+      userId,
+      /^[UW][A-Z0-9]+$/,
+      `Invalid --user-id '${userId}'. Must be a single Slack user ID such as U1234567890`
+    );
+  },
+
+  /**
    * Validates send target: must specify exactly one of --channel, --user, --user-id, or --email
    */
   sendTarget: (options: Record<string, unknown>): string | null => {

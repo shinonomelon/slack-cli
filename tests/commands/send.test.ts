@@ -895,6 +895,78 @@ describe('send command', () => {
         /^Error: You must specify one of: --channel, --user, or --email$/
       );
     });
+
+    it.each(['U1234567890', 'W1234567890'])('should accept %s as --user-id', async (userId) => {
+      // 直前のテストが openDmChannel を reject のまま残すので、ここで明示的に stub する
+      vi.mocked(mockSlackClient.openDmChannel).mockResolvedValue('D9876543210');
+      vi.mocked(mockSlackClient.sendMessage).mockResolvedValue({
+        ok: true,
+        ts: '1234567890.123456',
+      });
+
+      await program.parseAsync(['node', 'slack-cli', 'send', '--user-id', userId, '-m', 'Hello']);
+
+      expect(mockSlackClient.openDmChannel).toHaveBeenCalledWith(userId);
+      expect(mockSlackClient.sendMessage).toHaveBeenCalledWith(
+        'D9876543210',
+        'Hello',
+        undefined,
+        undefined
+      );
+    });
+
+    it.each([
+      ['an empty string', ''],
+      ['comma-separated IDs', 'U1234567890,U0987654321'],
+      ['a lowercase ID', 'u1234567890'],
+      ['a channel ID', 'C1234567890'],
+      ['a user name', '@john'],
+      ['an ID with a trailing space', 'U1234567890 '],
+      ['only the prefix letter', 'U'],
+    ])('should reject %s as --user-id without sending', async (_label, userId) => {
+      const sendCommand = setupSendCommand();
+      sendCommand.exitOverride();
+
+      await expect(
+        sendCommand.parseAsync(['--user-id', userId, '-m', 'Hello'], { from: 'user' })
+      ).rejects.toThrow(
+        `Error: Invalid --user-id '${userId}'. Must be a single Slack user ID such as U1234567890`
+      );
+
+      expect(mockSlackClient.openDmChannel).not.toHaveBeenCalled();
+      expect(mockSlackClient.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('should reject --user-id= with no value', async () => {
+      const sendCommand = setupSendCommand();
+      sendCommand.exitOverride();
+
+      await expect(
+        sendCommand.parseAsync(['--user-id=', '-m', 'Hello'], { from: 'user' })
+      ).rejects.toThrow("Error: Invalid --user-id ''. Must be a single Slack user ID");
+
+      expect(mockSlackClient.sendMessage).not.toHaveBeenCalled();
+    });
+
+    // -c と一緒でも、不正な --user-id を黙って無視して -c に送ることはしない
+    // （空文字は sendTarget に「指定なし」と数えられていた）。
+    // カンマ区切りの行は、sendUserId が sendTarget より前に走る順序も固定する
+    it.each([
+      ['an empty --user-id', ''],
+      ['comma-separated --user-id values', 'U1234567890,U0987654321'],
+    ])('should reject %s given with --channel instead of ignoring it', async (_label, userId) => {
+      const sendCommand = setupSendCommand();
+      sendCommand.exitOverride();
+
+      await expect(
+        sendCommand.parseAsync(['-c', 'general', '--user-id', userId, '-m', 'Hello'], {
+          from: 'user',
+        })
+      ).rejects.toThrow(`Error: Invalid --user-id '${userId}'. Must be a single Slack user ID`);
+
+      expect(mockSlackClient.openDmChannel).not.toHaveBeenCalled();
+      expect(mockSlackClient.sendMessage).not.toHaveBeenCalled();
+    });
   });
 
   describe('error handling', () => {
