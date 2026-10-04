@@ -166,6 +166,13 @@ export class SlackApiClient {
     }
   }
 
+  async listUnreadToMe(days: number): Promise<Channel[]> {
+    const userId = await this.searchOps.getAuthenticatedUserId();
+    const after = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const candidates = await this.searchOps.listMessagesToUser(userId, after);
+    return this.channelOps.countUnreadSinceLastRead(candidates);
+  }
+
   async getChannelUnread(channelNameOrId: string): Promise<ChannelUnreadResult> {
     return this.messageOps.getChannelUnread(channelNameOrId);
   }

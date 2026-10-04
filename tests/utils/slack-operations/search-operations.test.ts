@@ -7,6 +7,9 @@ vi.mock('@slack/web-api', () => ({
       search: {
         messages: vi.fn(),
       },
+      auth: {
+        test: vi.fn(),
+      },
     };
   }),
   LogLevel: {
@@ -18,6 +21,9 @@ describe('SearchOperations', () => {
   type MockClient = {
     search: {
       messages: ReturnType<typeof vi.fn>;
+    };
+    auth: {
+      test: ReturnType<typeof vi.fn>;
     };
   };
 
@@ -170,6 +176,65 @@ describe('SearchOperations', () => {
       expect(result.matches).toHaveLength(1);
       expect(result.matches[0].username).toBeUndefined();
       expect(result.matches[0].channel.name).toBeUndefined();
+    });
+  });
+
+  describe('getAuthenticatedUserId', () => {
+    it('should return the user id from auth.test', async () => {
+      mockClient.auth.test.mockResolvedValue({ ok: true, user_id: 'UME' });
+
+      await expect(searchOps.getAuthenticatedUserId()).resolves.toBe('UME');
+    });
+  });
+
+  describe('listMessagesToUser', () => {
+    it('should search DMs and mentions, skip own messages, and merge duplicates', async () => {
+      mockClient.search.messages
+        .mockResolvedValueOnce({
+          messages: {
+            matches: [
+              { ts: '100.1', user: 'U1', channel: { id: 'D1', name: 'U1', is_im: true } },
+              { ts: '100.2', user: 'UME', channel: { id: 'D1', name: 'U1', is_im: true } },
+            ],
+            pagination: { page_count: 1 },
+          },
+        })
+        .mockResolvedValueOnce({
+          messages: {
+            matches: [
+              { ts: '100.1', user: 'U1', channel: { id: 'D1', name: 'U1', is_im: true } },
+              { ts: '200.1', user: 'U2', channel: { id: 'C1', name: 'general' } },
+            ],
+            pagination: { page_count: 1 },
+          },
+        });
+
+      const result = await searchOps.listMessagesToUser('UME', '2026-09-27');
+
+      expect(mockClient.search.messages).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ query: 'is:dm after:2026-09-27' })
+      );
+      expect(mockClient.search.messages).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ query: '<@UME> after:2026-09-27' })
+      );
+      expect(result.map((r) => [r.channel.id, r.timestamps])).toEqual([
+        ['D1', ['100.1']],
+        ['C1', ['200.1']],
+      ]);
+      expect(result[0].channel.is_im).toBe(true);
+    });
+
+    it('should stop paging after the maximum number of pages', async () => {
+      mockClient.search.messages.mockResolvedValue({
+        messages: { matches: [], pagination: { page_count: 20 } },
+      });
+
+      await searchOps.listMessagesToUser('UME', '2026-09-27');
+
+      // 2 queries x 5 pages
+      expect(mockClient.search.messages).toHaveBeenCalledTimes(10);
     });
   });
 

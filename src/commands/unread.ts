@@ -10,6 +10,8 @@ import { parseBoolean, parseFormat, parseLimit } from '../utils/option-parsers';
 import { Channel, ChannelUnreadResult, SlackApiClient } from '../utils/slack-api-client';
 import { sanitizeTerminalText } from '../utils/terminal-sanitizer';
 
+const DEFAULT_TO_ME_DAYS = 7;
+
 async function fetchChannelUnreadData(client: SlackApiClient, channelName: string) {
   return await client.getChannelUnread(channelName);
 }
@@ -80,7 +82,9 @@ async function handleAllChannelsUnread(
   client: SlackApiClient,
   options: UnreadOptions
 ): Promise<void> {
-  const channels = await fetchAllUnreadChannels(client);
+  const channels = parseBoolean(options.toMe)
+    ? await client.listUnreadToMe(parseLimit(options.days, DEFAULT_TO_ME_DAYS))
+    : await fetchAllUnreadChannels(client);
 
   if (channels.length === 0) {
     console.log(chalk.green('✓ No unread messages'));
@@ -110,6 +114,12 @@ export function setupUnreadCommand(): Command {
       DEFAULTS.UNREAD_DISPLAY_LIMIT.toString()
     )
     .option('--mark-read', 'Mark messages as read after fetching', false)
+    .option(
+      '--to-me',
+      'Count only direct messages and mentions newer than your last read position',
+      false
+    )
+    .option('--days <number>', 'With --to-me, how many days back to look', `${DEFAULT_TO_ME_DAYS}`)
     .option('--profile <profile>', 'Use specific workspace profile')
     .action(
       wrapCommand(async (options: UnreadOptions) => {

@@ -719,6 +719,43 @@ describe('ChannelOperations', () => {
     });
   });
 
+  describe('countUnreadSinceLastRead', () => {
+    it('should count only messages newer than last_read and omit conversations with none', async () => {
+      mockClient.conversations.info.mockImplementation(
+        async ({ channel }: { channel: string }) => ({
+          channel:
+            channel === 'D1'
+              ? { id: 'D1', is_im: true, user: 'U1', last_read: '100.5' }
+              : { id: 'C1', name: 'general', last_read: '300.0' },
+        })
+      );
+      mockClient.users.info.mockResolvedValue({ user: { name: 'alice' } });
+
+      const result = await channelOps.countUnreadSinceLastRead([
+        { channel: { id: 'D1', name: 'U1', is_im: true }, timestamps: ['100.1', '100.9', '101.0'] },
+        { channel: { id: 'C1', name: 'general' }, timestamps: ['200.0'] },
+      ]);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({ id: 'D1', user: 'U1', unread_count: 2 });
+    });
+
+    it('should omit conversations whose info lookup fails and warn on stderr', async () => {
+      vi.useFakeTimers();
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      mockClient.conversations.info.mockRejectedValue(new Error('rate limit'));
+
+      const resultPromise = channelOps.countUnreadSinceLastRead([
+        { channel: { id: 'C1', name: 'general' }, timestamps: ['200.0'] },
+      ]);
+      await vi.advanceTimersByTimeAsync(20000);
+
+      await expect(resultPromise).resolves.toEqual([]);
+      expect(errorSpy).toHaveBeenCalledWith('Warning: skipped C1: rate limit');
+      errorSpy.mockRestore();
+    });
+  });
+
   describe('getChannelInfo', () => {
     it('should resolve names and fetch channel info without member counts', async () => {
       mockClient.conversations.list.mockResolvedValue({

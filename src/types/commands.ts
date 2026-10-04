@@ -109,6 +109,8 @@ export interface UnreadOptions {
   countOnly?: boolean;
   limit?: string;
   markRead?: boolean;
+  toMe?: boolean;
+  days?: string;
   profile?: string;
 }
 

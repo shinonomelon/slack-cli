@@ -4,6 +4,7 @@ import { BaseSlackClient, SlackClientDependency } from './base-client';
 
 interface SearchMessageMatch {
   ts?: string;
+  user?: string;
   channel?: {
     id?: string;
     name?: string;
@@ -17,6 +18,12 @@ interface SearchMessageMatch {
 
 const UNREAD_SEARCH_QUERY = 'is:unread';
 const UNREAD_SEARCH_PAGE_SIZE = 100;
+const TO_USER_SEARCH_MAX_PAGES = 5;
+
+export interface MessagesToUser {
+  channel: Channel;
+  timestamps: string[];
+}
 
 export class SearchOperations extends BaseSlackClient {
   constructor(dependency: SlackClientDependency) {
@@ -43,6 +50,70 @@ export class SearchOperations extends BaseSlackClient {
     }
 
     return this.aggregateUnreadChannels(matches);
+  }
+
+  async getAuthenticatedUserId(): Promise<string> {
+    const response = await this.client.auth.test();
+    if (!response.user_id) {
+      throw new Error('Could not determine the authenticated user');
+    }
+    return response.user_id;
+  }
+
+  /**
+   * Collect recent messages addressed to the user (direct messages and mentions), excluding the
+   * user's own messages. Returns the message timestamps grouped by conversation.
+   */
+  async listMessagesToUser(userId: string, afterDate: string): Promise<MessagesToUser[]> {
+    const queries = [`is:dm after:${afterDate}`, `<@${userId}> after:${afterDate}`];
+    const byChannel = new Map<string, MessagesToUser>();
+
+    for (const query of queries) {
+      for (const match of await this.fetchAllSearchMatches(query, TO_USER_SEARCH_MAX_PAGES)) {
+        const channelId = match.channel?.id;
+        if (!channelId || !match.ts || match.user === userId) {
+          continue;
+        }
+
+        const entry = byChannel.get(channelId) ?? {
+          channel: {
+            id: channelId,
+            name: match.channel?.name || channelId,
+            is_channel: match.channel?.is_channel,
+            is_group: match.channel?.is_group,
+            is_im: match.channel?.is_im,
+            is_mpim: match.channel?.is_mpim,
+            is_private: match.channel?.is_private ?? false,
+            created: 0,
+          },
+          timestamps: [],
+        };
+        if (!entry.timestamps.includes(match.ts)) {
+          entry.timestamps.push(match.ts);
+        }
+        byChannel.set(channelId, entry);
+      }
+    }
+
+    return [...byChannel.values()];
+  }
+
+  private async fetchAllSearchMatches(
+    query: string,
+    maxPages: number
+  ): Promise<SearchMessageMatch[]> {
+    const firstPage = await this.fetchSearchPage(query, 1, UNREAD_SEARCH_PAGE_SIZE);
+    const matches = [...((firstPage.messages?.matches || []) as SearchMessageMatch[])];
+    const pageCount = Math.min(firstPage.messages?.pagination?.page_count || 1, maxPages);
+
+    for (let page = 2; page <= pageCount; page++) {
+      const response = await this.rateLimiter(() =>
+        this.fetchSearchPage(query, page, UNREAD_SEARCH_PAGE_SIZE)
+      );
+      matches.push(...((response.messages?.matches || []) as SearchMessageMatch[]));
+    }
+
+    return matches;
   }
 
   async searchMessages(query: string, options: SearchMessagesOptions = {}): Promise<SearchResult> {

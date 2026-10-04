@@ -9,7 +9,7 @@ import type {
 } from '../../types/slack';
 import { channelResolver } from '../channel-resolver';
 import { DEFAULTS, RATE_LIMIT } from '../constants';
-import { getSlackErrorCode, getSlackNeededScopes } from '../error-utils';
+import { extractErrorMessage, getSlackErrorCode, getSlackNeededScopes } from '../error-utils';
 import { sanitizeTerminalText } from '../terminal-sanitizer';
 import { BaseSlackClient, SlackClientDependency } from './base-client';
 
@@ -131,6 +131,40 @@ export class ChannelOperations extends BaseSlackClient {
     );
 
     return enrichedChannels;
+  }
+
+  /**
+   * Count the given messages that are newer than each conversation's last_read position.
+   * Conversations without unread messages, or whose info cannot be fetched, are omitted.
+   */
+  async countUnreadSinceLastRead(
+    candidates: { channel: Channel; timestamps: string[] }[]
+  ): Promise<Channel[]> {
+    const unreadScanLimiter = pLimit(RATE_LIMIT.UNREAD_SCAN_CONCURRENT_REQUESTS);
+
+    const results = await Promise.all(
+      candidates.map(({ channel, timestamps }) =>
+        unreadScanLimiter(async () => {
+          try {
+            const channelInfo = await this.fetchChannelInfo(channel.id);
+            const lastRead = Number.parseFloat(channelInfo.last_read || '0');
+            const unreadCount = timestamps.filter((ts) => Number.parseFloat(ts) > lastRead).length;
+            return unreadCount > 0
+              ? await this.buildUnreadChannel(channel, channelInfo, unreadCount)
+              : null;
+          } catch (error) {
+            // Omitting silently would look the same as "no unread", so say which conversation was skipped
+            console.error(
+              `Warning: skipped ${channel.id}: ${sanitizeTerminalText(extractErrorMessage(error))}`
+            );
+            await this.handleRateLimit(error);
+            return null;
+          }
+        })
+      )
+    );
+
+    return results.filter((channel): channel is Channel => channel !== null);
   }
 
   async resolveChannelId(channelNameOrId: string): Promise<string> {
