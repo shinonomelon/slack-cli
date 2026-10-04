@@ -1,4 +1,5 @@
 import {
+  AuthTestResponse,
   ChatPostEphemeralResponse,
   ChatPostMessageResponse,
   ChatScheduleMessageResponse,
@@ -33,6 +34,7 @@ import {
   type AssistantThreadStatusOptions,
   type AssistantThreadStatusResponse,
 } from './slack-operations/assistant-operations';
+import { AuthOperations } from './slack-operations/auth-operations';
 import { createSlackClientContext, type SlackClientOptions } from './slack-operations/base-client';
 import { CanvasOperations } from './slack-operations/canvas-operations';
 import { ChannelOperations } from './slack-operations/channel-operations';
@@ -62,6 +64,7 @@ export class SlackApiClient {
   private starOps: StarOperations;
   private canvasOps: CanvasOperations;
   private assistantOps: AssistantOperations;
+  private authOps: AuthOperations;
 
   constructor(token: string, options?: SlackClientOptions) {
     const sharedContext = createSlackClientContext(token, options);
@@ -76,6 +79,7 @@ export class SlackApiClient {
     this.starOps = new StarOperations(sharedContext);
     this.canvasOps = new CanvasOperations(sharedContext, this.channelOps);
     this.assistantOps = new AssistantOperations(sharedContext, this.channelOps);
+    this.authOps = new AuthOperations(sharedContext);
   }
 
   async sendMessage(
@@ -244,6 +248,10 @@ export class SlackApiClient {
 
   async resolveUserIdByName(username: string): Promise<string> {
     return this.userOps.resolveUserIdByName(username);
+  }
+
+  async testAuth(): Promise<AuthTestResponse> {
+    return this.authOps.testAuth();
   }
 
   async searchMessages(query: string, options?: SearchMessagesOptions): Promise<SearchResult> {

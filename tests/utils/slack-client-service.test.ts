@@ -24,6 +24,9 @@ function createClientWithOps() {
       clearThreadStatus: vi.fn().mockResolvedValue('clearThreadStatus-result'),
       setThreadStatus: vi.fn().mockResolvedValue('setThreadStatus-result'),
     },
+    authOps: {
+      testAuth: vi.fn().mockResolvedValue('testAuth-result'),
+    },
     canvasOps: {
       listCanvases: vi.fn().mockResolvedValue('listCanvases-result'),
       readCanvas: vi.fn().mockResolvedValue('readCanvas-result'),
@@ -341,6 +344,13 @@ describe('SlackApiClient service facade', () => {
       'clearThreadStatus-result'
     );
     expect(ops.assistantOps.clearThreadStatus).toHaveBeenCalledWith('C1', '1.2');
+  });
+
+  it('delegates auth operations', async () => {
+    const { client, ops } = createClientWithOps();
+
+    await expect(client.testAuth()).resolves.toBe('testAuth-result');
+    expect(ops.authOps.testAuth).toHaveBeenCalledWith();
   });
 
   it('forwards rejectRateLimitedCalls from the constructor options to the WebClient', () => {

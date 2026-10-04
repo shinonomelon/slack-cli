@@ -26,6 +26,7 @@ import { setupStatusCommand } from './commands/status';
 import { setupUnreadCommand } from './commands/unread';
 import { setupUploadCommand } from './commands/upload';
 import { setupUsersCommand } from './commands/users';
+import { setupWhoamiCommand } from './commands/whoami';
 import { checkForUpdates } from './utils/update-notifier';
 
 const packageJson = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8')) as {
@@ -72,6 +73,7 @@ export function createProgram(): Command {
   program.addCommand(setupBookmarkCommand());
   program.addCommand(setupCanvasCommand());
   program.addCommand(setupStatusCommand());
+  program.addCommand(setupWhoamiCommand());
 
   return program;
 }

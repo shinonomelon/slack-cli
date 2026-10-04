@@ -70,6 +70,11 @@ export interface StatusStopOptions {
   profile?: string;
 }
 
+export interface WhoamiOptions {
+  format?: 'text' | 'json';
+  profile?: string;
+}
+
 export interface ScheduledListOptions {
   channel?: string;
   limit?: string;
