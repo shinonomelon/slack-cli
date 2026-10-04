@@ -347,7 +347,7 @@ export const optionValidators = {
   },
 
   /**
-   * Validates the send output format. Only text and json are valid because send has no table output
+   * send の出力形式を検証する。send には表の出力が無いので、text と json だけを通す
    */
   sendFormat: (options: Record<string, unknown>): string | null => {
     if (options.format !== undefined) {

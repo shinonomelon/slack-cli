@@ -731,7 +731,7 @@ describe('send command', () => {
         undefined,
         undefined
       );
-      // No name or email lookup: skipping the users.list scan is the point of --user-id.
+      // 名前・メールでの検索はしない。users.list の走査を省くのが --user-id の目的。
       expect(mockSlackClient.resolveUserIdByName).not.toHaveBeenCalled();
       expect(mockSlackClient.lookupUserByEmail).not.toHaveBeenCalled();
       expect(mockConsole.logSpy).toHaveBeenCalledTimes(1);
@@ -740,7 +740,7 @@ describe('send command', () => {
 
     it('should report the opened conversation in the JSON output', async () => {
       vi.mocked(mockSlackClient.openDmChannel).mockResolvedValue('D9876543210');
-      // No channel in the response, so channelId can only come from the opened DM.
+      // 応答に channel を入れない。channelId は開いた DM からしか得られない。
       vi.mocked(mockSlackClient.sendMessage).mockResolvedValue({
         ok: true,
         ts: '1234567890.123456',
@@ -1142,7 +1142,8 @@ describe('send command', () => {
         'json',
       ]);
 
-      // One call with the exact text pins key order, indentation and the absence of the ✓ line.
+      // 1回の呼び出しで文字列まで一致させることで、キーの順・字下げ・✓ の行が混ざらないことを
+      // まとめて固定する。
       expect(mockConsole.logSpy).toHaveBeenCalledTimes(1);
       expect(mockConsole.logSpy).toHaveBeenCalledWith(
         JSON.stringify(
@@ -1344,8 +1345,8 @@ describe('send command', () => {
     });
 
     it('should never fail after the message was sent, even if the client resolves with nothing', async () => {
-      // A failure after the API call would exit 1 and make the caller retry a message that was
-      // already delivered. Stub explicitly: mockResolvedValue calls leak between tests here.
+      // API 呼び出しのあとに失敗すると exit 1 になり、届いた投稿を呼び出し側が送り直してしまう。
+      // stub は明示する。このファイルでは mockResolvedValue の設定がテスト間で残る。
       vi.mocked(mockSlackClient.sendMessage).mockResolvedValue(undefined as never);
 
       await program.parseAsync([

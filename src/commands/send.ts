@@ -64,7 +64,7 @@ async function readBlocks(options: SendOptions): Promise<SlackMessageBlock[] | u
   }
 }
 
-// Machine-readable results for `--format json`. Callers use them to locate the posted message.
+// --format json 用の機械可読な結果。呼び出し側が投稿の位置を特定するために使う。
 interface SentJsonResult {
   ok: true;
   channelId: string;
@@ -148,7 +148,7 @@ export function setupSendCommand(): Command {
           targetChannel = await client.openDmChannel(user.id!);
           targetLabel = options.email;
         } else if (options.userId) {
-          // The ID is already known, so open the DM directly instead of scanning users.list.
+          // ID が分かっているので、users.list を走査せずに DM を直接開く。
           targetChannel = await client.openDmChannel(options.userId);
           targetLabel = options.userId;
         } else {
@@ -166,8 +166,8 @@ export function setupSendCommand(): Command {
           );
 
           if (options.format === 'json') {
-            // Read the response with optional chaining: nothing after the API call may throw,
-            // or the caller would treat an already accepted request as a failure.
+            // 応答は optional chaining で読む。API 呼び出しのあとで例外を投げると、
+            // 受理済みの送信を呼び出し側が失敗と見なしてしまう。
             printJson({
               ok: true,
               scheduled: true,
@@ -197,7 +197,7 @@ export function setupSendCommand(): Command {
         );
 
         if (options.format === 'json') {
-          // See the scheduled branch: nothing after the API call may throw.
+          // 予約の分岐と同じ理由で、API 呼び出しのあとで例外を投げてはいけない。
           printJson({
             ok: true,
             channelId: sent?.channel ?? targetChannel,
