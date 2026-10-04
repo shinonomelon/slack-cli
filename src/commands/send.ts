@@ -10,6 +10,7 @@ import { extractErrorMessage } from '../utils/error-utils';
 import { FileError, ValidationError } from '../utils/errors';
 import { parseProfile } from '../utils/option-parsers';
 import { resolvePostAt } from '../utils/schedule-utils';
+import { sanitizeTerminalData } from '../utils/terminal-sanitizer';
 import { createValidationHook, optionValidators } from '../utils/validators';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -63,6 +64,26 @@ async function readBlocks(options: SendOptions): Promise<SlackMessageBlock[] | u
   }
 }
 
+// Machine-readable results for `--format json`. Callers use them to locate the posted message.
+interface SentJsonResult {
+  ok: true;
+  channelId: string;
+  ts: string | null;
+  threadTs: string | null;
+}
+
+interface ScheduledJsonResult {
+  ok: true;
+  scheduled: true;
+  channelId: string;
+  scheduledMessageId: string | null;
+  postAt: number;
+}
+
+function printJson(result: SentJsonResult | ScheduledJsonResult): void {
+  console.log(JSON.stringify(sanitizeTerminalData(result), null, 2));
+}
+
 export function setupSendCommand(): Command {
   const sendCommand = new Command('send')
     .description('Send or schedule a message to a Slack channel or DM')
@@ -76,6 +97,7 @@ export function setupSendCommand(): Command {
     .option('-t, --thread <thread>', 'Thread timestamp to reply to')
     .option('--at <time>', 'Schedule time (Unix timestamp in seconds or ISO 8601)')
     .option('--after <minutes>', 'Schedule message after N minutes')
+    .option('--format <format>', 'Output format: text, json', 'text')
     .option('--profile <profile>', 'Use specific workspace profile')
     .hook(
       'preAction',
@@ -84,6 +106,7 @@ export function setupSendCommand(): Command {
         optionValidators.messageOrFile,
         optionValidators.threadTimestamp,
         optionValidators.scheduleTiming,
+        optionValidators.sendFormat,
       ])
     )
     .action(
@@ -127,13 +150,27 @@ export function setupSendCommand(): Command {
         }
 
         if (postAt !== null) {
-          await client.scheduleMessage(
+          const scheduled = await client.scheduleMessage(
             targetChannel,
             messageContent,
             postAt,
             options.thread,
             blocks
           );
+
+          if (options.format === 'json') {
+            // Read the response with optional chaining: nothing after the API call may throw,
+            // or the caller would treat an already accepted request as a failure.
+            printJson({
+              ok: true,
+              scheduled: true,
+              channelId: scheduled?.channel ?? targetChannel,
+              scheduledMessageId: scheduled?.scheduled_message_id ?? null,
+              postAt: scheduled?.post_at ?? postAt,
+            });
+            return;
+          }
+
           const postAtIso = new Date(postAt * 1000).toISOString();
           if (options.user || options.email) {
             console.log(chalk.green(`✓ Message scheduled to ${targetLabel} at ${postAtIso}`));
@@ -145,7 +182,24 @@ export function setupSendCommand(): Command {
           return;
         }
 
-        await client.sendMessage(targetChannel, messageContent, options.thread, blocks);
+        const sent = await client.sendMessage(
+          targetChannel,
+          messageContent,
+          options.thread,
+          blocks
+        );
+
+        if (options.format === 'json') {
+          // See the scheduled branch: nothing after the API call may throw.
+          printJson({
+            ok: true,
+            channelId: sent?.channel ?? targetChannel,
+            ts: sent?.ts ?? null,
+            threadTs: options.thread ?? null,
+          });
+          return;
+        }
+
         if (options.user || options.email) {
           console.log(chalk.green(`✓ DM sent to ${targetLabel}`));
         } else {

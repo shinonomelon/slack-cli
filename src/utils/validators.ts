@@ -326,6 +326,19 @@ export const optionValidators = {
   },
 
   /**
+   * Validates the send output format. Only text and json are valid because send has no table output
+   */
+  sendFormat: (options: Record<string, unknown>): string | null => {
+    if (options.format !== undefined) {
+      const validFormats = ['text', 'json'];
+      if (!validFormats.includes(options.format as string)) {
+        return `Invalid format '${options.format}'. Must be one of: ${validFormats.join(', ')}`;
+      }
+    }
+    return null;
+  },
+
+  /**
    * Validates message count for history command
    */
   messageCount: (options: Record<string, unknown>): string | null => {

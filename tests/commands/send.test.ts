@@ -1,3 +1,4 @@
+import chalk from 'chalk';
 import * as fs from 'fs/promises';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setupSendCommand } from '../../src/commands/send';
@@ -749,6 +750,386 @@ describe('send command', () => {
         expect.any(String)
       );
       expect(mockConsole.exitSpy).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe('--format text', () => {
+    beforeEach(() => {
+      vi.mocked(mockConfigManager.getConfig).mockResolvedValue({
+        token: 'test-token',
+        updatedAt: new Date().toISOString(),
+      });
+    });
+
+    it('should print the same line as before when --format is omitted', async () => {
+      vi.mocked(mockSlackClient.sendMessage).mockResolvedValue({
+        ok: true,
+        channel: 'C0123456789',
+        ts: '1234567890.123456',
+      });
+
+      await program.parseAsync(['node', 'slack-cli', 'send', '-c', 'general', '-m', 'Hello']);
+
+      expect(mockConsole.logSpy).toHaveBeenCalledTimes(1);
+      expect(mockConsole.logSpy).toHaveBeenCalledWith(
+        chalk.green(`✓ ${SUCCESS_MESSAGES.MESSAGE_SENT('general')}`)
+      );
+    });
+
+    it('should print the same line with an explicit --format text', async () => {
+      vi.mocked(mockSlackClient.sendMessage).mockResolvedValue({
+        ok: true,
+        channel: 'C0123456789',
+        ts: '1234567890.123456',
+      });
+
+      await program.parseAsync([
+        'node',
+        'slack-cli',
+        'send',
+        '-c',
+        'general',
+        '-m',
+        'Hello',
+        '--format',
+        'text',
+      ]);
+
+      expect(mockConsole.logSpy).toHaveBeenCalledTimes(1);
+      expect(mockConsole.logSpy).toHaveBeenCalledWith(
+        chalk.green(`✓ ${SUCCESS_MESSAGES.MESSAGE_SENT('general')}`)
+      );
+    });
+
+    it('should keep the DM line unchanged', async () => {
+      vi.mocked(mockSlackClient.resolveUserIdByName).mockResolvedValue('U1234567890');
+      vi.mocked(mockSlackClient.openDmChannel).mockResolvedValue('D9876543210');
+      vi.mocked(mockSlackClient.sendMessage).mockResolvedValue({
+        ok: true,
+        channel: 'D9876543210',
+        ts: '1234567890.123456',
+      });
+
+      await program.parseAsync(['node', 'slack-cli', 'send', '--user', 'john', '-m', 'Hello']);
+
+      expect(mockConsole.logSpy).toHaveBeenCalledTimes(1);
+      expect(mockConsole.logSpy).toHaveBeenCalledWith(chalk.green('✓ DM sent to @john'));
+    });
+
+    it('should keep the scheduled line unchanged', async () => {
+      vi.mocked(mockSlackClient.scheduleMessage).mockResolvedValue({
+        ok: true,
+        channel: 'C0123456789',
+        scheduled_message_id: 'Q1298393284',
+        post_at: 2051258400,
+      });
+
+      await program.parseAsync([
+        'node',
+        'slack-cli',
+        'send',
+        '-c',
+        'general',
+        '-m',
+        'Later',
+        '--at',
+        '2035-01-01T10:00:00Z',
+      ]);
+
+      expect(mockConsole.logSpy).toHaveBeenCalledTimes(1);
+      expect(mockConsole.logSpy).toHaveBeenCalledWith(
+        chalk.green(
+          `✓ ${SUCCESS_MESSAGES.MESSAGE_SCHEDULED('general', '2035-01-01T10:00:00.000Z')}`
+        )
+      );
+    });
+  });
+
+  describe('--format json', () => {
+    beforeEach(() => {
+      vi.mocked(mockConfigManager.getConfig).mockResolvedValue({
+        token: 'test-token',
+        updatedAt: new Date().toISOString(),
+      });
+    });
+
+    it('should print the channel ID and ts of the posted message', async () => {
+      vi.mocked(mockSlackClient.sendMessage).mockResolvedValue({
+        ok: true,
+        channel: 'C0123456789',
+        ts: '1234567890.123456',
+      });
+
+      await program.parseAsync([
+        'node',
+        'slack-cli',
+        'send',
+        '-c',
+        'general',
+        '-m',
+        'Hello',
+        '--format',
+        'json',
+      ]);
+
+      // One call with the exact text pins key order, indentation and the absence of the ✓ line.
+      expect(mockConsole.logSpy).toHaveBeenCalledTimes(1);
+      expect(mockConsole.logSpy).toHaveBeenCalledWith(
+        JSON.stringify(
+          { ok: true, channelId: 'C0123456789', ts: '1234567890.123456', threadTs: null },
+          null,
+          2
+        )
+      );
+    });
+
+    it('should fall back to the target when the response has no channel', async () => {
+      vi.mocked(mockSlackClient.sendMessage).mockResolvedValue({
+        ok: true,
+        ts: '1234567890.123456',
+      });
+
+      await program.parseAsync([
+        'node',
+        'slack-cli',
+        'send',
+        '-c',
+        'C0123456789',
+        '-m',
+        'Hello',
+        '--format',
+        'json',
+      ]);
+
+      expect(mockConsole.logSpy).toHaveBeenCalledTimes(1);
+      expect(mockConsole.logSpy).toHaveBeenCalledWith(
+        JSON.stringify(
+          { ok: true, channelId: 'C0123456789', ts: '1234567890.123456', threadTs: null },
+          null,
+          2
+        )
+      );
+    });
+
+    it('should report the parent ts as threadTs when replying to a thread', async () => {
+      vi.mocked(mockSlackClient.sendMessage).mockResolvedValue({
+        ok: true,
+        channel: 'C0123456789',
+        ts: '1719207700.000200',
+      });
+
+      await program.parseAsync([
+        'node',
+        'slack-cli',
+        'send',
+        '-c',
+        'general',
+        '-m',
+        'Reply',
+        '-t',
+        '1719207629.000100',
+        '--format',
+        'json',
+      ]);
+
+      expect(mockConsole.logSpy).toHaveBeenCalledTimes(1);
+      expect(mockConsole.logSpy).toHaveBeenCalledWith(
+        JSON.stringify(
+          {
+            ok: true,
+            channelId: 'C0123456789',
+            ts: '1719207700.000200',
+            threadTs: '1719207629.000100',
+          },
+          null,
+          2
+        )
+      );
+    });
+
+    it('should print only JSON for a DM sent with --user', async () => {
+      vi.mocked(mockSlackClient.resolveUserIdByName).mockResolvedValue('U1234567890');
+      vi.mocked(mockSlackClient.openDmChannel).mockResolvedValue('D9876543210');
+      vi.mocked(mockSlackClient.sendMessage).mockResolvedValue({
+        ok: true,
+        ts: '1234567890.123456',
+      });
+
+      await program.parseAsync([
+        'node',
+        'slack-cli',
+        'send',
+        '--user',
+        'john',
+        '-m',
+        'Hello',
+        '--format',
+        'json',
+      ]);
+
+      expect(mockConsole.logSpy).toHaveBeenCalledTimes(1);
+      expect(mockConsole.logSpy).toHaveBeenCalledWith(
+        JSON.stringify(
+          { ok: true, channelId: 'D9876543210', ts: '1234567890.123456', threadTs: null },
+          null,
+          2
+        )
+      );
+    });
+
+    it('should print the scheduled message as JSON', async () => {
+      vi.mocked(mockSlackClient.scheduleMessage).mockResolvedValue({
+        ok: true,
+        channel: 'C0123456789',
+        scheduled_message_id: 'Q1298393284',
+        post_at: 2051258400,
+      });
+
+      await program.parseAsync([
+        'node',
+        'slack-cli',
+        'send',
+        '-c',
+        'general',
+        '-m',
+        'Later',
+        '--at',
+        '2035-01-01T10:00:00Z',
+        '--format',
+        'json',
+      ]);
+
+      expect(mockSlackClient.sendMessage).not.toHaveBeenCalled();
+      expect(mockConsole.logSpy).toHaveBeenCalledTimes(1);
+      expect(mockConsole.logSpy).toHaveBeenCalledWith(
+        JSON.stringify(
+          {
+            ok: true,
+            scheduled: true,
+            channelId: 'C0123456789',
+            scheduledMessageId: 'Q1298393284',
+            postAt: 2051258400,
+          },
+          null,
+          2
+        )
+      );
+    });
+
+    it('should fall back to the requested time and target when the schedule response is sparse', async () => {
+      vi.mocked(mockSlackClient.scheduleMessage).mockResolvedValue({
+        ok: true,
+        scheduled_message_id: 'Q1298393284',
+      });
+
+      await program.parseAsync([
+        'node',
+        'slack-cli',
+        'send',
+        '-c',
+        'C0123456789',
+        '-m',
+        'Later',
+        '--at',
+        '2035-01-01T10:00:00Z',
+        '--format',
+        'json',
+      ]);
+
+      expect(mockConsole.logSpy).toHaveBeenCalledTimes(1);
+      expect(mockConsole.logSpy).toHaveBeenCalledWith(
+        JSON.stringify(
+          {
+            ok: true,
+            scheduled: true,
+            channelId: 'C0123456789',
+            scheduledMessageId: 'Q1298393284',
+            postAt: 2051258400,
+          },
+          null,
+          2
+        )
+      );
+    });
+
+    it('should print null for ts when the response has none', async () => {
+      vi.mocked(mockSlackClient.sendMessage).mockResolvedValue({ ok: true });
+
+      await program.parseAsync([
+        'node',
+        'slack-cli',
+        'send',
+        '-c',
+        'general',
+        '-m',
+        'Hello',
+        '--format',
+        'json',
+      ]);
+
+      expect(mockConsole.logSpy).toHaveBeenCalledTimes(1);
+      expect(mockConsole.logSpy).toHaveBeenCalledWith(
+        JSON.stringify({ ok: true, channelId: 'general', ts: null, threadTs: null }, null, 2)
+      );
+    });
+
+    it('should never fail after the message was sent, even if the client resolves with nothing', async () => {
+      // A failure after the API call would exit 1 and make the caller retry a message that was
+      // already delivered. Stub explicitly: mockResolvedValue calls leak between tests here.
+      vi.mocked(mockSlackClient.sendMessage).mockResolvedValue(undefined as never);
+
+      await program.parseAsync([
+        'node',
+        'slack-cli',
+        'send',
+        '-c',
+        'general',
+        '-m',
+        'Hello',
+        '--format',
+        'json',
+      ]);
+
+      expect(mockConsole.exitSpy).not.toHaveBeenCalled();
+      expect(mockConsole.logSpy).toHaveBeenCalledTimes(1);
+      expect(mockConsole.logSpy).toHaveBeenCalledWith(
+        JSON.stringify({ ok: true, channelId: 'general', ts: null, threadTs: null }, null, 2)
+      );
+    });
+
+    it('should keep reporting failures on stderr as before', async () => {
+      vi.mocked(mockSlackClient.sendMessage).mockRejectedValue(new Error('channel_not_found'));
+
+      await program.parseAsync([
+        'node',
+        'slack-cli',
+        'send',
+        '-c',
+        'nonexistent',
+        '-m',
+        'Hello',
+        '--format',
+        'json',
+      ]);
+
+      expect(mockConsole.errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Error:'),
+        'channel_not_found'
+      );
+      expect(mockConsole.exitSpy).toHaveBeenCalledWith(1);
+      expect(mockConsole.logSpy).not.toHaveBeenCalled();
+    });
+
+    it('should reject formats other than text and json before sending', async () => {
+      const sendCommand = setupSendCommand();
+      sendCommand.exitOverride();
+
+      await expect(
+        sendCommand.parseAsync(['-c', 'general', '-m', 'Hello', '--format', 'table'], {
+          from: 'user',
+        })
+      ).rejects.toThrow("Error: Invalid format 'table'. Must be one of: text, json");
+      expect(mockSlackClient.sendMessage).not.toHaveBeenCalled();
     });
   });
 });
