@@ -1,5 +1,22 @@
 # Slack CLI
 
+## この fork について
+
+Raycast 拡張 Slack Hub のために、本家 [urugus/slack-cli](https://github.com/urugus/slack-cli) に次の機能を足した fork です。足した分は `slack-hub` ブランチにあります。
+
+- `channels --member-only`: 参加しているチャンネルだけを一覧する
+- `unread`: JSON 出力に、DM の相手の `userId` を含める
+- `unread --to-me`: 自分宛ての DM とメンションのうち、最後に読んだ位置より新しいものを数える
+- `send --format json`: 投稿先のチャンネルと `ts` を JSON で出力する
+- `send --user-id`: Slack のユーザー ID を指定して DM を送る
+- `search --format raw`: Slack が返した `matches` を加工せずに出力する
+- `channel last-read`: 会話ごとの最後に読んだ位置（`last_read`）を出力する
+- `whoami`: トークンの持ち主のユーザーとワークスペースを表示する
+
+入れるには、この fork を clone して、そのフォルダで `npm ci` と `npm run build` を実行します。できた `dist/index.js` は `node dist/index.js <コマンド>` で使います。`npm install -g` は勧めません。本家と同じ名前（`@urugus/slack-cli`）なので、入れると本家を置き換えてしまいます。
+
+端末では、本家に新しい版が出ると、更新の案内（`npm install -g @urugus/slack-cli`）が表示されます。従うと、この fork ではなく本家が入ります。`SLACK_CLI_DISABLE_UPDATE_NOTIFIER=1` を設定すると、案内は出なくなります。
+
 [![npm version](https://img.shields.io/npm/v/@urugus/slack-cli)](https://www.npmjs.com/package/@urugus/slack-cli)
 [![npm downloads](https://img.shields.io/npm/dm/@urugus/slack-cli)](https://www.npmjs.com/package/@urugus/slack-cli)
 
